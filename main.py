@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -6,6 +6,7 @@ from database import engine, Base, get_db
 from models import URL
 from schemas import URLCreate, URLOut
 from shortener import encode
+from cache import redis_client, check_rate_limit
 
 Base.metadata.create_all(bind=engine)
 
@@ -15,8 +16,24 @@ app = FastAPI()
 def health():
     return {"status": "ok"}
 
+
 @app.post("/shorten", response_model=URLOut)
-def shorten_url(url: URLCreate, db: Session = Depends(get_db)):
+def shorten_url(url: URLCreate, request: Request, db: Session = Depends(get_db)):
+    client_ip = request.client.host
+    check_rate_limit(client_ip)
+
+    new_url = URL(original_url=url.original_url, short_code="")
+    db.add(new_url)
+    db.commit()
+    db.refresh(new_url)
+
+    new_url.short_code = encode(new_url.id)
+    db.commit()
+    db.refresh(new_url)
+
+    redis_client.set(new_url.short_code, new_url.original_url, ex=3600)
+
+    return new_url
     new_url = URL(original_url=url.original_url, short_code="")
     db.add(new_url)
     db.commit()

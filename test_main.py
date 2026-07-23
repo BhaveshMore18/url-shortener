@@ -39,3 +39,9 @@ def test_stats_endpoint():
 def test_stats_not_found():
     response = client.get("/stats/nonexistent")
     assert response.status_code == 404
+
+def test_rate_limit_exceeded():
+    for _ in range(5):
+        client.post("/shorten", json={"original_url": "https://example.com"})
+    response = client.post("/shorten", json={"original_url": "https://example.com"})
+    assert response.status_code == 429
